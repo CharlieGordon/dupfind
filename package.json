@@ -1,0 +1,19 @@
+{
+  "name": "duplicate-file-finder",
+  "version": "1.0.0",
+  "description": "Node.js CLI to find duplicate files by content hash",
+  "main": "dist/index.js",
+  "bin": {
+    "dupfind": "dist/index.js"
+  },
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "typescript": "^5.4.5"
+  }
+}
