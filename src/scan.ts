@@ -38,12 +38,12 @@ export async function walkDirectory(
 
 export async function collectSizeGroups(
   rootDir: string,
-  outputPath: string
+  excludePath?: string
 ): Promise<Map<number, string[]>> {
   const sizeGroups = new Map<number, string[]>();
 
   await walkDirectory(rootDir, async (filePath) => {
-    if (filePath === outputPath) {
+    if (excludePath && filePath === excludePath) {
       return;
     }
 

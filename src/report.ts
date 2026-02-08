@@ -1,15 +1,12 @@
-import fs from "fs";
-import path from "path";
-
-import { HASH_CONCURRENCY, OUTPUT_FILE_NAME } from "./config";
+import { HASH_CONCURRENCY } from "./config";
 import { hashFile, mapWithConcurrency } from "./hash";
 import { collectSizeGroups } from "./scan";
 
-const fsp = fs.promises;
-
-export async function buildDuplicatesReport(rootDir: string): Promise<string> {
-  const outputPath = path.join(rootDir, OUTPUT_FILE_NAME);
-  const sizeGroups = await collectSizeGroups(rootDir, outputPath);
+export async function buildDuplicatesReport(
+  rootDir: string,
+  excludePath?: string
+): Promise<string> {
+  const sizeGroups = await collectSizeGroups(rootDir, excludePath);
 
   const candidates: string[] = [];
   for (const files of sizeGroups.values()) {
@@ -60,6 +57,5 @@ export async function buildDuplicatesReport(rootDir: string): Promise<string> {
     report += "\n";
   }
 
-  await fsp.writeFile(outputPath, report, "utf8");
-  return outputPath;
+  return report;
 }
