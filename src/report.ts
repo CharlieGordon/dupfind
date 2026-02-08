@@ -4,9 +4,10 @@ import { collectSizeGroups } from "./scan";
 
 export async function buildDuplicatesReport(
   rootDir: string,
-  excludePath?: string
+  excludePath?: string,
+  extensions?: string[]
 ): Promise<string> {
-  const sizeGroups = await collectSizeGroups(rootDir, excludePath);
+  const sizeGroups = await collectSizeGroups(rootDir, excludePath, extensions);
 
   const candidates: string[] = [];
   for (const files of sizeGroups.values()) {

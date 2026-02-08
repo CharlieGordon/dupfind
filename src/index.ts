@@ -9,19 +9,31 @@ const fsp = fs.promises;
 
 function printUsage(): void {
   console.error(
-    "Usage: dupfind <directory> [-o [path] | --output [path]]"
+    "Usage: dupfind <directory> [-o [path] | --output [path]] [-e ext1,ext2 | --ext ext1,ext2]"
   );
 }
 
 interface ParsedArgs {
   targetDir: string | undefined;
   outputFile: string | undefined;
+  extensions: string[] | undefined;
+}
+
+function parseExtensions(value: string): string[] {
+  return value
+    .split(",")
+    .map((ext) => {
+      ext = ext.trim().toLowerCase();
+      return ext.startsWith(".") ? ext : `.${ext}`;
+    })
+    .filter((ext) => ext.length > 1);
 }
 
 function parseArgs(argv: string[]): ParsedArgs {
   const args = argv.slice(2);
   let targetDir: string | undefined;
   let outputFile: string | undefined;
+  let extensions: string[] | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -43,12 +55,35 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
+    if (arg === "-e" || arg === "--ext") {
+      const next = args[i + 1];
+      if (next && !next.startsWith("-")) {
+        extensions = parseExtensions(next);
+        i++;
+      } else {
+        console.error("Error: -e/--ext requires a comma-separated list of extensions.");
+        process.exitCode = 1;
+      }
+      continue;
+    }
+
+    if (arg.startsWith("--ext=")) {
+      const value = arg.slice("--ext=".length);
+      if (value) {
+        extensions = parseExtensions(value);
+      } else {
+        console.error("Error: --ext= requires a comma-separated list of extensions.");
+        process.exitCode = 1;
+      }
+      continue;
+    }
+
     if (!targetDir) {
       targetDir = arg;
     }
   }
 
-  return { targetDir, outputFile };
+  return { targetDir, outputFile, extensions };
 }
 
 async function ensureValidRoot(dirPath: string): Promise<void> {
@@ -70,7 +105,7 @@ async function ensureValidRoot(dirPath: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { targetDir, outputFile } = parseArgs(process.argv);
+  const { targetDir, outputFile, extensions } = parseArgs(process.argv);
 
   if (!targetDir) {
     printUsage();
@@ -100,7 +135,7 @@ async function main(): Promise<void> {
   }
 
   try {
-    const report = await buildDuplicatesReport(rootDir, resolvedOutputPath);
+    const report = await buildDuplicatesReport(rootDir, resolvedOutputPath, extensions);
 
     if (!report) {
       console.log("No duplicates found.");
