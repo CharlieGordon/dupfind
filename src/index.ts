@@ -4,8 +4,17 @@ import path from "path";
 
 import { OUTPUT_FILE_NAME } from "./config";
 import { buildDuplicatesReport } from "./report";
+import { createProgressReporter } from "./progress";
 
 const fsp = fs.promises;
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+}
 
 function printUsage(): void {
   console.error(
@@ -13,10 +22,37 @@ function printUsage(): void {
   );
 }
 
+function printHelp(): void {
+  const pkg = require('../package.json');
+  console.log(`dupfind v${pkg.version} - Find duplicate files by content hash\n`);
+  console.log('Usage: dupfind <directory> [options]\n');
+  console.log('Options:');
+  console.log('  -o, --output [path]     Write report to file (default: duplicates.txt in scanned dir)');
+  console.log('                          Without this flag, output goes to stdout');
+  console.log('  -e, --ext <extensions>  Filter files by extension (comma-separated, e.g., jpg,png)');
+  console.log('  -h, --help              Show this help message');
+  console.log('  -v, --version           Show version number\n');
+  console.log('Examples:');
+  console.log('  dupfind ./photos                          # Find all duplicates');
+  console.log('  dupfind ./photos -o report.txt            # Write results to file');
+  console.log('  dupfind ./photos -e jpg,png               # Only scan images');
+  console.log('  dupfind ./photos --ext=jpg --output=dupes.txt\n');
+  console.log('Notes:');
+  console.log('  - Symbolic links are never followed');
+  console.log('  - The output file is excluded from scanning');
+  console.log('  - Statistics are shown on stderr after the scan completes');
+}
+
+function printVersion(): void {
+  const pkg = require('../package.json');
+  console.log(pkg.version);
+}
+
 interface ParsedArgs {
   targetDir: string | undefined;
   outputFile: string | undefined;
   extensions: string[] | undefined;
+  errors: string[];
 }
 
 function parseExtensions(value: string): string[] {
@@ -31,59 +67,108 @@ function parseExtensions(value: string): string[] {
 
 function parseArgs(argv: string[]): ParsedArgs {
   const args = argv.slice(2);
+
+  // Check for help/version flags first
+  if (args.includes('-h') || args.includes('--help')) {
+    printHelp();
+    process.exit(0);
+  }
+
+  if (args.includes('-v') || args.includes('--version')) {
+    printVersion();
+    process.exit(0);
+  }
+
   let targetDir: string | undefined;
   let outputFile: string | undefined;
   let extensions: string[] | undefined;
+  const errors: string[] = [];
 
-  for (let i = 0; i < args.length; i++) {
+  let i = 0;
+  while (i < args.length) {
     const arg = args[i];
 
-    if (arg === "-o" || arg === "--output") {
+    // Handle known flags
+    if (arg === '-o' || arg === '--output') {
+      if (outputFile !== undefined) {
+        errors.push('Output flag (-o/--output) specified multiple times');
+      }
       const next = args[i + 1];
-      if (next && !next.startsWith("-")) {
+      if (next && !next.startsWith('-')) {
         outputFile = next;
-        i++;
+        i += 2;
       } else {
-        // Flag present but no path — will use default later
-        outputFile = "";
+        outputFile = '';
+        i++;
       }
       continue;
     }
 
-    if (arg.startsWith("--output=")) {
-      outputFile = arg.slice("--output=".length) || "";
+    if (arg.startsWith('--output=')) {
+      if (outputFile !== undefined) {
+        errors.push('Output flag (--output=) specified multiple times');
+      }
+      outputFile = arg.slice('--output='.length) || '';
+      i++;
       continue;
     }
 
-    if (arg === "-e" || arg === "--ext") {
+    if (arg === '-e' || arg === '--ext') {
+      if (extensions !== undefined) {
+        errors.push('Extension flag (-e/--ext) specified multiple times');
+      }
       const next = args[i + 1];
-      if (next && !next.startsWith("-")) {
-        extensions = parseExtensions(next);
+      if (next && !next.startsWith('-')) {
+        const parsed = parseExtensions(next);
+        if (parsed.length === 0) {
+          errors.push('Extension list is empty or invalid');
+        } else {
+          extensions = parsed;
+        }
+        i += 2;
+      } else {
+        errors.push('-e/--ext requires a comma-separated list of extensions');
         i++;
-      } else {
-        console.error("Error: -e/--ext requires a comma-separated list of extensions.");
-        process.exitCode = 1;
       }
       continue;
     }
 
-    if (arg.startsWith("--ext=")) {
-      const value = arg.slice("--ext=".length);
+    if (arg.startsWith('--ext=')) {
+      if (extensions !== undefined) {
+        errors.push('Extension flag (--ext=) specified multiple times');
+      }
+      const value = arg.slice('--ext='.length);
       if (value) {
-        extensions = parseExtensions(value);
+        const parsed = parseExtensions(value);
+        if (parsed.length === 0) {
+          errors.push('Extension list is empty or invalid');
+        } else {
+          extensions = parsed;
+        }
       } else {
-        console.error("Error: --ext= requires a comma-separated list of extensions.");
-        process.exitCode = 1;
+        errors.push('--ext= requires a comma-separated list of extensions');
       }
+      i++;
       continue;
     }
 
+    // Unknown flag
+    if (arg.startsWith('-')) {
+      errors.push(`Unknown flag: ${arg}`);
+      i++;
+      continue;
+    }
+
+    // Positional argument (directory)
     if (!targetDir) {
       targetDir = arg;
+    } else {
+      errors.push(`Unexpected argument: ${arg}`);
     }
+    i++;
   }
 
-  return { targetDir, outputFile, extensions };
+  return { targetDir, outputFile, extensions, errors };
 }
 
 async function ensureValidRoot(dirPath: string): Promise<void> {
@@ -105,13 +190,26 @@ async function ensureValidRoot(dirPath: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { targetDir, outputFile, extensions } = parseArgs(process.argv);
+  const parsed = parseArgs(process.argv);
 
-  if (!targetDir) {
+  if (parsed.errors.length > 0) {
+    for (const error of parsed.errors) {
+      console.error(`Error: ${error}`);
+    }
+    console.error('');
     printUsage();
     process.exitCode = 1;
     return;
   }
+
+  if (!parsed.targetDir) {
+    console.error('Error: No directory specified');
+    printUsage();
+    process.exitCode = 1;
+    return;
+  }
+
+  const { targetDir, outputFile, extensions } = parsed;
 
   const rootDir = path.resolve(targetDir);
 
@@ -135,18 +233,38 @@ async function main(): Promise<void> {
   }
 
   try {
-    const report = await buildDuplicatesReport(rootDir, resolvedOutputPath, extensions);
+    // Progress enabled when outputting to file or when stdout is a TTY
+    const showProgress = resolvedOutputPath !== undefined || process.stdout.isTTY;
+    const progress = createProgressReporter(showProgress);
 
-    if (!report) {
-      console.log("No duplicates found.");
+    const result = await buildDuplicatesReport(rootDir, resolvedOutputPath, extensions, progress);
+
+    // Display statistics to stderr
+    console.error(`\nScan complete:`);
+    console.error(`- Files scanned: ${result.stats.filesScanned}`);
+    console.error(`- Files hashed: ${result.stats.filesHashed}`);
+    console.error(`- Duplicate groups: ${result.stats.duplicateGroups}`);
+    console.error(`- Duplicate files: ${result.stats.duplicateFiles}`);
+    console.error(`- Wasted space: ${formatBytes(result.stats.wastedBytes)}`);
+
+    if (result.errors.length > 0) {
+      console.error(`- Hash errors: ${result.errors.length}`);
+      console.error(`\nFiles that failed to hash:`);
+      for (const err of result.errors) {
+        console.error(`  ${err.filePath}: ${err.error}`);
+      }
+    }
+
+    if (!result.report) {
+      console.log("\nNo duplicates found.");
       return;
     }
 
     if (resolvedOutputPath) {
-      await fsp.writeFile(resolvedOutputPath, report, "utf8");
-      console.log(`Duplicate report written to: ${resolvedOutputPath}`);
+      await fsp.writeFile(resolvedOutputPath, result.report, "utf8");
+      console.log(`\nDuplicate report written to: ${resolvedOutputPath}`);
     } else {
-      process.stdout.write(report);
+      process.stdout.write(result.report);
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
