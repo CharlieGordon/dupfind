@@ -61,6 +61,7 @@ export async function walkDirectory(
  * @param excludePath - Optional absolute path to exclude from results (e.g., output file)
  * @param extensions - Optional array of extensions to filter (e.g., ['.jpg', '.png'])
  *   Extensions are case-insensitive and must include the leading dot
+ * @param minSize - Optional minimum file size in bytes (files smaller than this are skipped)
  * @param progress - Optional progress reporter for UI feedback
  * @returns Promise resolving to Map from file size to array of file paths with that size
  *
@@ -76,6 +77,7 @@ export async function collectSizeGroups(
   rootDir: string,
   excludePath?: string,
   extensions?: string[],
+  minSize?: number,
   progress?: ProgressReporter
 ): Promise<Map<number, string[]>> {
   const sizeGroups = new Map<number, string[]>();
@@ -106,6 +108,10 @@ export async function collectSizeGroups(
     }
 
     if (!stats.isFile()) {
+      return;
+    }
+
+    if (minSize !== undefined && stats.size < minSize) {
       return;
     }
 

@@ -27,6 +27,17 @@ function parseExtensions(value: string): string[] {
     .filter((ext) => ext.length > 1);
 }
 
+function parseSize(value: string): number {
+  const match = value.match(/^(\d+(?:\.\d+)?)\s*(KB|MB|GB|TB)?$/i);
+  if (!match) {
+    throw new Error(`Invalid size format: ${value}. Use bytes or suffix like 1KB, 10MB, 1GB`);
+  }
+  const num = parseFloat(match[1]);
+  const unit = (match[2] || '').toUpperCase();
+  const multipliers: Record<string, number> = { '': 1, 'KB': 1024, 'MB': 1024 ** 2, 'GB': 1024 ** 3, 'TB': 1024 ** 4 };
+  return Math.floor(num * multipliers[unit]);
+}
+
 async function ensureValidRoot(dirPath: string): Promise<void> {
   let stats: fs.Stats;
   try {
@@ -55,12 +66,14 @@ async function main(): Promise<void> {
     .argument('<directory>', 'directory to scan for duplicates')
     .option('-o, --output [path]', 'write report to file (default: duplicates.txt in scanned dir)')
     .option('-e, --ext <extensions>', 'filter files by extension (comma-separated, e.g., jpg,png)')
+    .option('-s, --min-size <size>', 'skip files smaller than this size (e.g., 1KB, 10MB)')
     .addHelpText('after', `
 Examples:
   $ dupfind ./photos                          # Find all duplicates
   $ dupfind ./photos -o report.txt            # Write results to file
   $ dupfind ./photos -e jpg,png               # Only scan images
-  $ dupfind ./photos --ext=jpg --output=dupes.txt
+  $ dupfind ./photos -s 1MB                   # Skip files smaller than 1MB
+  $ dupfind ./photos --ext=jpg --min-size=10MB --output=dupes.txt
 
 Notes:
   - Symbolic links are never followed
@@ -80,6 +93,21 @@ Notes:
       return;
     }
     extensions = parsed;
+  }
+
+  let minSize: number | undefined;
+  if (options.minSize) {
+    try {
+      minSize = parseSize(options.minSize);
+      if (minSize < 0) {
+        throw new Error('Size must be non-negative');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Error: ${message}`);
+      process.exitCode = 1;
+      return;
+    }
   }
 
   const rootDir = path.resolve(targetDir);
@@ -104,7 +132,7 @@ Notes:
     const showProgress = resolvedOutputPath !== undefined || process.stdout.isTTY;
     const progress = createProgressReporter(showProgress);
 
-    const result = await buildDuplicatesReport(rootDir, resolvedOutputPath, extensions, progress);
+    const result = await buildDuplicatesReport(rootDir, resolvedOutputPath, extensions, minSize, progress);
 
     // Display statistics to stderr
     console.error(`\nScan complete:`);

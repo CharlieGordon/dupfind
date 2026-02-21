@@ -201,4 +201,63 @@ describe('collectSizeGroups', () => {
     expect(group).toBeDefined();
     expect(group).toHaveLength(2);
   });
+
+  it('should filter by minimum size', async () => {
+    await createTestFile(path.join(tempDir, 'small.txt'), 'hi');
+    await createTestFile(path.join(tempDir, 'medium.txt'), 'hello');
+    await createTestFile(path.join(tempDir, 'large.txt'), 'hello world');
+
+    const sizeGroups = await collectSizeGroups(tempDir, undefined, undefined, 5);
+
+    expect(sizeGroups.size).toBe(2);
+    expect(sizeGroups.get(2)).toBeUndefined();
+    expect(sizeGroups.get(5)).toHaveLength(1);
+    expect(sizeGroups.get(11)).toHaveLength(1);
+  });
+
+  it('should include files exactly at minSize boundary', async () => {
+    await createTestFile(path.join(tempDir, 'exact.txt'), 'hello');
+    await createTestFile(path.join(tempDir, 'larger.txt'), 'hello!');
+
+    const sizeGroups = await collectSizeGroups(tempDir, undefined, undefined, 5);
+
+    expect(sizeGroups.size).toBe(2);
+    expect(sizeGroups.get(5)).toHaveLength(1);
+    expect(sizeGroups.get(6)).toHaveLength(1);
+  });
+
+  it('should include files larger than minSize', async () => {
+    await createTestFile(path.join(tempDir, 'small.txt'), 'hi');
+    await createTestFile(path.join(tempDir, 'large.txt'), 'hello world');
+
+    const sizeGroups = await collectSizeGroups(tempDir, undefined, undefined, 3);
+
+    expect(sizeGroups.size).toBe(1);
+    expect(sizeGroups.get(2)).toBeUndefined();
+    expect(sizeGroups.get(11)).toHaveLength(1);
+  });
+
+  it('should handle minSize of 0 (include all files)', async () => {
+    await createTestFile(path.join(tempDir, 'tiny.txt'), 'x');
+    await createTestFile(path.join(tempDir, 'empty.txt'), '');
+
+    const sizeGroups = await collectSizeGroups(tempDir, undefined, undefined, 0);
+
+    expect(sizeGroups.size).toBe(2);
+    expect(sizeGroups.get(1)).toHaveLength(1);
+    expect(sizeGroups.get(0)).toHaveLength(1);
+  });
+
+  it('should combine minSize with extension filter', async () => {
+    await createTestFile(path.join(tempDir, 'small.txt'), 'hi');
+    await createTestFile(path.join(tempDir, 'large.txt'), 'hello world');
+    await createTestFile(path.join(tempDir, 'small.jpg'), 'hi');
+    await createTestFile(path.join(tempDir, 'large.jpg'), 'hello world');
+
+    const sizeGroups = await collectSizeGroups(tempDir, undefined, ['.txt'], 5);
+
+    expect(sizeGroups.size).toBe(1);
+    expect(sizeGroups.get(11)).toHaveLength(1);
+    expect(sizeGroups.get(11)?.[0]).toMatch(/\.txt$/);
+  });
 });

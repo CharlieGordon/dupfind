@@ -21,6 +21,7 @@ const fsp = fs.promises;
  * @param rootDir - Absolute path to directory to scan
  * @param excludePath - Optional absolute path to exclude (typically output file)
  * @param extensions - Optional array of extensions to filter (e.g., ['.txt', '.jpg'])
+ * @param minSize - Optional minimum file size in bytes (files smaller than this are skipped)
  * @param progress - Optional progress reporter for real-time feedback
  * @returns Promise resolving to ReportResult containing:
  *   - report: Formatted text report (empty string if no duplicates found)
@@ -37,9 +38,10 @@ export async function buildDuplicatesReport(
   rootDir: string,
   excludePath?: string,
   extensions?: string[],
+  minSize?: number,
   progress?: ProgressReporter
 ): Promise<ReportResult> {
-  const sizeGroups = await collectSizeGroups(rootDir, excludePath, extensions, progress);
+  const sizeGroups = await collectSizeGroups(rootDir, excludePath, extensions, minSize, progress);
 
   // Calculate total files scanned
   let totalFiles = 0;

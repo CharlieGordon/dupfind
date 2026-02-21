@@ -14,7 +14,7 @@ npm run build
 ## Usage
 
 ```bash
-node dist/index.js <directory> [-o [path] | --output [path]] [-e ext1,ext2 | --ext ext1,ext2]
+node dist/index.js <directory> [-o [path] | --output [path]] [-e ext1,ext2 | --ext ext1,ext2] [-s size | --min-size size]
 ```
 
 Run via npx (after building):
@@ -32,6 +32,7 @@ If the directory is missing or invalid, the tool prints usage and exits with a n
 |------|-------------|
 | `-o [path]`, `--output [path]` | Write report to a file. If no path is given, defaults to `duplicates.txt` in the scanned directory. When omitted, output goes to stdout. |
 | `-e ext1,ext2`, `--ext ext1,ext2` | Only scan files with the specified extensions (comma-separated). Extensions can be given with or without a leading dot (e.g. `jpg` or `.jpg`). When omitted, all files are scanned. |
+| `-s size`, `--min-size size` | Skip files smaller than the specified size. Accepts bytes (e.g., `1024`) or human-readable suffixes: `KB`, `MB`, `GB`, `TB` (e.g., `1KB`, `10MB`). Case-insensitive. |
 | `-h`, `--help` | Display help message with usage examples and exit. |
 | `-v`, `--version` | Display version number and exit. |
 
@@ -54,8 +55,11 @@ node dist/index.js ./sample-data -o report.txt
 # Only scan image files
 node dist/index.js ./sample-data -e jpg,png,gif
 
-# Combine both flags
-node dist/index.js ./photos --ext=jpg,png --output=dupes.txt
+# Skip files smaller than 1MB
+node dist/index.js ./sample-data -s 1MB
+
+# Combine flags: scan only large JPGs and PNGs
+node dist/index.js ./photos --ext=jpg,png --min-size=10MB --output=dupes.txt
 ```
 
 Sample output:
@@ -96,6 +100,7 @@ Files that failed to hash:
 ## How It Works
 
 - **Directory traversal:** Recursively walks subdirectories and processes regular files only.
+- **Size filtering:** Optional minimum size threshold skips small files before any hashing.
 - **Hashing:** Uses streaming SHA-256 hashing from Node's `crypto` module.
 - **Performance:** Groups by file size before hashing and limits concurrent hashing tasks (2-8 workers based on CPU count).
 - **Progress reporting:** Real-time updates shown on stderr during scanning and hashing phases.
@@ -130,6 +135,7 @@ If you encounter permission errors, the tool will log them to stderr and continu
 ### Large Directories
 For very large directories (millions of files), consider:
 - Filtering by extension (`-e`) to reduce the scan scope
+- Setting a minimum size (`-s`) to skip small files
 - Running on a subset first to estimate performance
 - Ensuring adequate disk space for the output file
 
